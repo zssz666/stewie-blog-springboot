@@ -1,0 +1,28 @@
+# 开发环境配置
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://sh-cynosdbmysql-grp-qgd1k7we.sql.tencentcdb.com:22959/stewie_blog?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=true
+    username: root
+    password: 'zhang2004!'
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      timeout: 5000ms
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    # 手动执行 stewie_blog_init.sql 后，baseline=2 让 Flyway 跳过 V1/V2，后续迁移从 V3 起
+    baseline-version: 2
+    encoding: UTF-8
+
+logging:
+  level:
+    root: INFO
+    com.stewie.blog: DEBUG
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
