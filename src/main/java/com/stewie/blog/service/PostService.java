@@ -2,6 +2,7 @@ package com.stewie.blog.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.stewie.blog.common.PageResult;
+import com.stewie.blog.dto.request.PostRequest;
 import com.stewie.blog.dto.vo.PostVO;
 import com.stewie.blog.entity.Post;
 
@@ -33,4 +34,29 @@ public interface PostService extends IService<Post> {
      * 热门文章 Top N（按浏览量倒序）
      */
     List<PostVO> getPopularPosts(int limit);
+
+    /**
+     * 管理后台：分页查询全部文章（含草稿），可按状态过滤
+     */
+    PageResult<PostVO> adminPagePosts(long page, long size, Integer status);
+
+    /**
+     * 管理后台：按 id 获取单篇（编辑回显），不存在返回 null
+     */
+    PostVO getAdminPost(Long id);
+
+    /**
+     * 新建文章，返回新文章 id
+     */
+    Long createPost(PostRequest request);
+
+    /**
+     * 更新文章
+     */
+    void updatePost(Long id, PostRequest request);
+
+    /**
+     * 删除文章（逻辑删除）
+     */
+    void deletePost(Long id);
 }

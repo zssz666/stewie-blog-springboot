@@ -6,36 +6,43 @@ import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * 文章实体（对应 t_post）
+ * 管理员账户（对应 t_user）
  */
 @Data
-@TableName("t_post")
-public class Post {
+@TableName("t_user")
+public class User {
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String slug;
-    private String title;
-    private String excerpt;
-    private String content;
-    private String coverColor;
-    private String cover;
-    private Long categoryId;
-    private LocalDate publishDate;
-    private Integer readingTime;
-    private Long views;
-    private Long likes;
+    /** 登录用户名（唯一） */
+    private String username;
+
+    /** 密码（BCrypt hash） */
+    private String password;
+
+    /** 昵称 */
+    private String nickname;
+
+    /** 头像 URL */
+    private String avatar;
+
+    /** 邮箱 */
+    private String email;
+
+    /** 状态：1=正常 0=禁用 */
     private Integer status;
+
+    /** 最后登录时间 */
+    private LocalDateTime lastLoginAt;
 
     @TableLogic
     private Integer deleted;
 
     private LocalDateTime createdAt;
+
     private LocalDateTime updatedAt;
-    private LocalDateTime publishedAt;
 }
