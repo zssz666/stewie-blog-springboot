@@ -6,6 +6,7 @@ import com.stewie.blog.common.ResultCode;
 import com.stewie.blog.dto.vo.PostVO;
 import com.stewie.blog.service.PostService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -52,11 +53,31 @@ public class PublicPostController {
     }
 
     /**
-     * 文章详情（按 slug，浏览量 +1）
+     * 全文搜索（ngram 中文分词），分页返回已发布文章
+     */
+    @GetMapping("/search")
+    public Result<PageResult<PostVO>> search(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        return Result.success(postService.searchPosts(q, page, size));
+    }
+
+    /**
+     * 文章详情（按 slug）
      */
     @GetMapping("/posts/{slug}")
     public Result<PostVO> getPost(@PathVariable String slug) {
         PostVO vo = postService.getPostBySlug(slug);
         return vo != null ? Result.success(vo) : Result.error(ResultCode.NOT_FOUND);
+    }
+
+    /**
+     * 浏览量埋点（匿名可调用）：文章被打开时 +1，不返回内容
+     */
+    @PostMapping("/posts/{id}/view")
+    public Result<Void> incrementViews(@PathVariable Long id) {
+        postService.incrementViews(id);
+        return Result.success();
     }
 }

@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.stewie</groupId>
     <artifactId>stewie-blog-spring</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.0.2-SNAPSHOT</version>
     <name>stewie-blog-spring</name>
     <description>Stewie Blog backend - Spring Boot 3 + MyBatis-Plus + Security + JWT</description>
     <url/>
@@ -109,6 +109,13 @@
             <groupId>com.github.xiaoymin</groupId>
             <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
             <version>${knife4j.version}</version>
+        </dependency>
+
+        <!-- 腾讯云 COS 对象存储（封面图上传，公有读私有写） -->
+        <dependency>
+            <groupId>com.qcloud</groupId>
+            <artifactId>cos_api</artifactId>
+            <version>5.6.247</version>
         </dependency>
 
         <!-- Lombok -->

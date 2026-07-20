@@ -26,14 +26,24 @@ public interface PostService extends IService<Post> {
     PageResult<PostVO> pagePublishedPosts(long page, long size, String category, String tag);
 
     /**
-     * 根据 slug 查询文章详情（浏览量 +1）
+     * 根据 slug 查询文章详情（不修改浏览量，浏览量由独立埋点接口统计）
      */
     PostVO getPostBySlug(String slug);
+
+    /**
+     * 浏览量埋点：文章被打开时调用，views +1（仅对已发布且未删除文章生效）
+     */
+    void incrementViews(Long id);
 
     /**
      * 热门文章 Top N（按浏览量倒序）
      */
     List<PostVO> getPopularPosts(int limit);
+
+    /**
+     * 全文搜索已发布文章（ngram 中文分词），分页返回
+     */
+    PageResult<PostVO> searchPosts(String q, long page, long size);
 
     /**
      * 管理后台：分页查询全部文章（含草稿），可按状态过滤

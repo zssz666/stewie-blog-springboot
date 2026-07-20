@@ -17,4 +17,9 @@ public interface AuthService {
      * 获取当前登录用户（从 SecurityContext 取）
      */
     UserVO getCurrentUser();
+
+    /**
+     * 登出（JWT 无状态，服务端无需处理，前端清除 token 即可）
+     */
+    void logout();
 }

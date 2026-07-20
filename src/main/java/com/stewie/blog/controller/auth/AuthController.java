@@ -38,4 +38,13 @@ public class AuthController {
     public Result<UserVO> me() {
         return Result.success(authService.getCurrentUser());
     }
+
+    /**
+     * 登出（无状态，前端清除 token 即可）
+     */
+    @PostMapping("/logout")
+    public Result<Void> logout() {
+        authService.logout();
+        return Result.success();
+    }
 }

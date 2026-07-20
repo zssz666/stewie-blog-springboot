@@ -1,10 +1,14 @@
-# 开发环境配置
+# 开发/部署环境配置
+# ⚠️ 安全约定：本文件严禁写入任何真实密钥（GitHub 推送保护会拦截并拒绝推送）。
+#    所有密钥一律通过环境变量在运行时注入，详见下方 ${VAR:} 占位。
+#    - 本地开发：在 IDEA 运行配置的 Environment variables 中填写
+#    - 服务器部署：启动 jar 前 export 这些变量，或写进启动脚本
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://sh-cynosdbmysql-grp-qgd1k7we.sql.tencentcdb.com:22959/stewie_blog?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=true
     username: root
-    password: 'zhang2004!'
+    password: ${DB_PASSWORD:}
   data:
     redis:
       host: localhost
@@ -26,3 +30,14 @@ logging:
     org.springframework.web: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# ===== 腾讯云 COS 上传凭证（通过环境变量注入）=====
+cos:
+  secret-id: ${COS_SECRET_ID:}
+  secret-key: ${COS_SECRET_KEY:}
+
+# JWT 密钥（通过环境变量注入）
+jwt:
+  secret: ${JWT_SECRET:}
+
+

@@ -74,6 +74,11 @@ public class AuthServiceImpl implements AuthService {
         return toVO(user);
     }
 
+    @Override
+    public void logout() {
+        // JWT 无状态，服务端无需处理；前端清除 token 即可
+    }
+
     private UserVO toVO(User user) {
         UserVO vo = new UserVO();
         vo.setId(user.getId());

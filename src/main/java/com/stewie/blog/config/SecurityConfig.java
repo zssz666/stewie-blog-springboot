@@ -56,6 +56,12 @@ public class SecurityConfig {
                         // 公开内容接口
                         .requestMatchers("/api/posts/**").permitAll()
                         .requestMatchers("/api/categories", "/api/tags", "/api/author").permitAll()
+                        // 搜索接口公开
+                        .requestMatchers("/api/search").permitAll()
+                        // Sitemap（供 Bing / Google 爬取，含文章 slug）
+                        .requestMatchers("/api/sitemap.xml").permitAll()
+                        // 登出公开（前端清除 token）
+                        .requestMatchers("/api/auth/logout").permitAll()
                         // 文档与错误页
                         .requestMatchers("/doc.html", "/v3/api-docs/**", "/swagger-ui/**",
                                 "/swagger-resources/**", "/webjars/**").permitAll()

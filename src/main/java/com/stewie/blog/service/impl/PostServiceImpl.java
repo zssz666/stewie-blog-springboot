@@ -1,6 +1,7 @@
 package com.stewie.blog.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.stewie.blog.common.BusinessException;
@@ -100,14 +101,22 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         if (post == null) {
             return null;
         }
-        Post update = new Post();
-        update.setId(post.getId());
-        update.setViews(post.getViews() + 1);
-        updateById(update);
-        post.setViews(post.getViews() + 1);
-
         List<PostVO> vos = convertPosts(List.of(post));
         return vos.isEmpty() ? null : vos.get(0);
+    }
+
+    /**
+     * 浏览量埋点：文章被打开时调用，views +1（仅对已发布且未删除文章生效）。
+     * 使用数据库原子自增，避免并发读-改-写竞态。
+     */
+    @Override
+    public void incrementViews(Long id) {
+        if (id == null) {
+            return;
+        }
+        UpdateWrapper<Post> uw = new UpdateWrapper<>();
+        uw.eq("id", id).eq("deleted", 0).eq("status", 1).setSql("views = views + 1");
+        update(uw);
     }
 
     @Override
@@ -204,6 +213,18 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         if (!removeById(id)) {
             throw new BusinessException(ResultCode.POST_NOT_FOUND);
         }
+    }
+
+    @Override
+    public PageResult<PostVO> searchPosts(String q, long page, long size) {
+        if (q == null || q.isBlank()) {
+            return PageResult.empty(page < 1 ? 1 : page, size < 1 ? 10 : size);
+        }
+        long safePage = page < 1 ? 1 : page;
+        long safeSize = size < 1 ? 10 : Math.min(size, 100);
+        Page<Post> pageParam = new Page<>(safePage, safeSize);
+        Page<Post> result = baseMapper.search(pageParam, q.trim());
+        return PageResult.of(safePage, safeSize, result.getTotal(), convertPosts(result.getRecords()));
     }
 
     /* ── 私有工具 ── */
