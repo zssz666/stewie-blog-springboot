@@ -40,4 +40,14 @@ cos:
 jwt:
   secret: ${JWT_SECRET:}
 
+# ===== AI 摘要生成（腾讯 TokenHub 平台，调用 DeepSeek-V4-Flash）=====
+# 接入点 https://tokenhub.tencentmaas.com/v1（OpenAI 兼容，代码自带 /chat/completions）；
+# 模型 deepseek-v4-flash-202605 在 TokenHub 默认开启思考模式，故默认关闭思考（enable-thinking=false），
+# 否则推理会占满 max_tokens 导致返回的 content 为空、摘要生成失败。
+ai:
+  base-url: ${AI_BASE_URL:https://tokenhub.tencentmaas.com/v1}
+  api-key: ${AI_API_KEY:}
+  model: ${AI_MODEL:deepseek-v4-flash-202605}
+  enable-thinking: ${AI_ENABLE_THINKING:false}
+
 

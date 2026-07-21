@@ -4,9 +4,12 @@ import com.stewie.blog.common.BusinessException;
 import com.stewie.blog.common.PageResult;
 import com.stewie.blog.common.Result;
 import com.stewie.blog.common.ResultCode;
+import com.stewie.blog.dto.request.ExcerptGenRequest;
 import com.stewie.blog.dto.request.PostRequest;
 import com.stewie.blog.dto.vo.PostVO;
+import com.stewie.blog.service.AiService;
 import com.stewie.blog.service.PostService;
+import java.util.Map;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,9 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminPostController {
 
     private final PostService postService;
+    private final AiService aiService;
 
-    public AdminPostController(PostService postService) {
+    public AdminPostController(PostService postService, AiService aiService) {
         this.postService = postService;
+        this.aiService = aiService;
     }
 
     /**
@@ -80,5 +85,15 @@ public class AdminPostController {
     public Result<Void> delete(@PathVariable Long id) {
         postService.deletePost(id);
         return Result.success();
+    }
+
+    /**
+     * AI 生成摘要：根据标题与正文（HTML）生成一句话摘要
+     * <p>需登录；正文 HTML 由服务端转换为纯文本后提交给大模型。</p>
+     */
+    @PostMapping("/posts/generate-excerpt")
+    public Result<Map<String, String>> generateExcerpt(@RequestBody ExcerptGenRequest body) {
+        String excerpt = aiService.generateExcerpt(body.getTitle(), body.getContent());
+        return Result.success(Map.of("excerpt", excerpt));
     }
 }
