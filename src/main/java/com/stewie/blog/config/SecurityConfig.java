@@ -60,6 +60,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/search").permitAll()
                         // Sitemap（供 Bing / Google 爬取，含文章 slug）
                         .requestMatchers("/api/sitemap.xml").permitAll()
+                        // 文章详情页 HTML（爬虫分流：Nginx 仅把爬虫转发到这里，人类走 SPA）
+                        .requestMatchers("/post/**").permitAll()
                         // 登出公开（前端清除 token）
                         .requestMatchers("/api/auth/logout").permitAll()
                         // 文档与错误页

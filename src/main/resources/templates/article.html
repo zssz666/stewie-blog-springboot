@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="/favicon.ico" />
+
+  <!-- 主题：尽早读 localStorage 避免闪烁（与 SPA 的 stores/theme 保持一致） -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    })();
+  </script>
+
+  <!-- 字体（与 index.html 同款） -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont/style.css" />
+
+  <!-- 文章页样式（前端 public/article.css，Vite 原样拷到 dist，Nginx 稳定路径提供） -->
+  <link rel="stylesheet" href="/article.css" />
+
+  <!-- ===== 核心 SEO meta（每篇独立，由后端注入） ===== -->
+  <title th:text="${post.title} + ' | ' + ${siteName}">文章标题 | Stewie 的前端实验室</title>
+  <meta name="description" th:content="${post.excerpt}" content="" />
+  <meta name="keywords" th:content="${post.tag} + ', 前端开发, Vue 3, TypeScript, Vite, 踩坑记录'" content="" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+  <meta name="author" th:content="${author != null ? author.name : 'Stewie'}" content="Stewie" />
+  <link rel="canonical" th:href="${canonical}" href="/" />
+
+  <!-- ===== Open Graph ===== -->
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" th:content="${siteName}" content="Stewie 的前端实验室" />
+  <meta property="og:title" th:content="${post.title}" content="" />
+  <meta property="og:description" th:content="${post.excerpt}" content="" />
+  <meta property="og:url" th:content="${canonical}" content="" />
+  <meta property="og:image" th:content="${coverAbs}" content="" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta property="article:published_time" th:content="${post.date}" content="" />
+
+  <!-- ===== Twitter Card ===== -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" th:content="${post.title}" content="" />
+  <meta name="twitter:description" th:content="${post.excerpt}" content="" />
+  <meta name="twitter:image" th:content="${coverAbs}" content="" />
+
+  <!-- ===== 结构化数据：BlogPosting（Jackson 安全序列化后注入） ===== -->
+  <script type="application/ld+json" th:utext="${blogPostingJsonLd}">{}</script>
+</head>
+<body>
+  <!-- 顶部导航（与 SPA 一致的链接，纯静态） -->
+  <header class="site-nav">
+    <a class="site-nav__brand" href="/">Stewie 的实验室</a>
+    <nav class="site-nav__links">
+      <a href="/">首页</a>
+      <a href="/articles">文章</a>
+      <a href="/about">关于</a>
+      <a href="/search">搜索</a>
+    </nav>
+  </header>
+
+  <main class="article-wrap">
+    <article class="article">
+      <!-- 标签 + 分类 -->
+      <div class="article__tags" th:if="${post.tag != null}">
+        <span class="article__tag" th:text="${post.tag}">Tag</span>
+        <span class="article__category" th:if="${post.category != null}" th:text="${post.category}">Category</span>
+      </div>
+
+      <h1 class="article__title" th:text="${post.title}">文章标题</h1>
+
+      <!-- 文章 meta：作者 / 日期 / 阅读时长 / 浏览量 / 点赞 -->
+      <div class="article__meta">
+        <span class="article__author" th:if="${author != null}">
+          <img th:if="${author.avatar != null}" th:src="${author.avatar}" th:alt="${author.name}" class="article__avatar" />
+          <span th:text="${author != null ? author.name : 'Stewie'}">Stewie</span>
+        </span>
+        <span class="article__dot">·</span>
+        <span th:text="${post.date}">2026-01-01</span>
+        <span class="article__dot">·</span>
+        <span th:text="${post.readingTime} + ' 分钟阅读'">5 分钟阅读</span>
+        <span class="article__dot" th:if="${post.views != null}">·</span>
+        <span th:if="${post.views != null}" th:text="${post.views} + ' 次浏览'">0 次浏览</span>
+        <span class="article__dot" th:if="${post.likes != null and post.likes > 0}">·</span>
+        <span th:if="${post.likes != null and post.likes > 0}" th:text="${post.likes} + ' 人点赞'">0 人点赞</span>
+      </div>
+
+      <!-- 封面 -->
+      <img th:if="${post.cover != null}" th:src="${coverAbs}" th:alt="${post.title}" class="article__cover" />
+
+      <!-- 正文：DB 里的 HTML 片段直接注入（th:utext 不转义），与 SPA v-html 同源 -->
+      <div class="article-content" th:utext="${post.content}"></div>
+
+      <!-- 返回文章列表 -->
+      <p class="article__back"><a href="/articles">← 返回文章列表</a></p>
+    </article>
+
+    <!-- 评论区：服务端渲染已通过评论树（与 SPA 主内容等价） -->
+    <section class="comments" id="comments" th:if="${comments != null and !comments.isEmpty()}">
+      <h2 class="comments__title">评论 <span class="comments__count" th:text="${comments.size()}">0</span></h2>
+      <ul class="comments__list">
+        <li class="comment" th:each="c : ${comments}">
+          <div class="comment__avatar" th:text="${c.nickname != null and !c.nickname.isEmpty() ? c.nickname.substring(0,1) : '客'}">客</div>
+          <div class="comment__body">
+            <div class="comment__meta">
+              <span class="comment__nick" th:text="${c.nickname}">昵称</span>
+              <span class="comment__date" th:text="${c.createdAt}">时间</span>
+            </div>
+            <p class="comment__content" th:text="${c.content}">评论内容</p>
+            <ul class="comments__list comments__list--reply" th:if="${c.replies != null and !c.replies.isEmpty()}">
+              <li class="comment comment--reply" th:each="r : ${c.replies}">
+                <div class="comment__avatar comment__avatar--sm" th:text="${r.nickname != null and !r.nickname.isEmpty() ? r.nickname.substring(0,1) : '客'}">客</div>
+                <div class="comment__body">
+                  <div class="comment__meta">
+                    <span class="comment__nick" th:text="${r.nickname}">昵称</span>
+                    <span class="comment__date" th:text="${r.createdAt}">时间</span>
+                  </div>
+                  <p class="comment__content" th:text="${r.content}">回复内容</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </li>
+      </ul>
+      <p class="comments__note">评论功能请在浏览器中打开本页体验。</p>
+    </section>
+
+    <!-- 热门文章：内链（帮助爬虫发现更多文章，权重传递） -->
+    <aside class="popular" th:if="${popular != null and !popular.isEmpty()}">
+      <h2 class="popular__title">热门文章</h2>
+      <ul class="popular__list">
+        <li th:each="p : ${popular}">
+          <a class="popular__link" th:href="@{'/post/' + ${p.slug}}" th:text="${p.title}">文章标题</a>
+        </li>
+      </ul>
+    </aside>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="site-footer">
+    <p>© Stewie 的前端实验室 ·
+      <a href="/">首页</a> · <a href="/articles">文章</a> · <a href="/about">关于</a>
+    </p>
+  </footer>
+</body>
+</html>

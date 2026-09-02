@@ -43,6 +43,12 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- Thymeleaf：服务端渲染文章 HTML（爬虫分流 / Dynamic Rendering） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>
+
         <!-- Security (阶段 4 启用 JWT，当前先放行) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

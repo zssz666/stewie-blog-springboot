@@ -48,10 +48,12 @@ public class SitemapController {
         appendUrl(xml, SITE_URL + "/about", "monthly", "0.5");
 
         // 4) 所有已发布文章（核心：让搜索引擎发现每篇独立 URL）
+        // ⚠ 路径必须与前端路由 router/index.ts 的 /post/:slug 一致（单数），
+        //    写成 /posts/ 会导致搜索引擎抓到 404，文章全部无法收录
         List<PostVO> posts = postService.listPublishedPosts();
         for (PostVO post : posts) {
             if (post.getSlug() != null && !post.getSlug().isBlank()) {
-                String loc = SITE_URL + "/posts/" + post.getSlug();
+                String loc = SITE_URL + "/post/" + post.getSlug();
                 xml.append("  <url>\n");
                 xml.append("    <loc>").append(escapeXml(loc)).append("</loc>\n");
                 if (post.getDate() != null) {

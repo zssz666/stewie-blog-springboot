@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="stylesheet" href="/article.css" />
+  <!-- 不存在的文章：明确 noindex，并返回真实 404 状态（控制器已 setStatus(404)） -->
+  <meta name="robots" content="noindex, follow" />
+  <title th:text="'文章不存在 | ' + ${siteName}">文章不存在 | Stewie 的前端实验室</title>
+</head>
+<body>
+  <header class="site-nav">
+    <a class="site-nav__brand" href="/">Stewie 的实验室</a>
+    <nav class="site-nav__links">
+      <a href="/">首页</a>
+      <a href="/articles">文章</a>
+      <a href="/about">关于</a>
+    </nav>
+  </header>
+  <main class="article-wrap">
+    <div class="notfound">
+      <p class="notfound__code">404</p>
+      <h1 class="notfound__title">文章不存在</h1>
+      <p class="notfound__desc">你访问的文章可能已被移动或删除。</p>
+      <p><a class="notfound__btn" href="/articles">返回文章列表</a></p>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <p>© Stewie 的前端实验室 · <a href="/">首页</a> · <a href="/articles">文章</a></p>
+  </footer>
+</body>
+</html>
