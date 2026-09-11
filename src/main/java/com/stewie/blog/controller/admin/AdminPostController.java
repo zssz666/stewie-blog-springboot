@@ -8,6 +8,7 @@ import com.stewie.blog.dto.request.ExcerptGenRequest;
 import com.stewie.blog.dto.request.PostRequest;
 import com.stewie.blog.dto.vo.PostVO;
 import com.stewie.blog.service.AiService;
+import com.stewie.blog.service.IndexNowService;
 import com.stewie.blog.service.PostService;
 import java.util.Map;
 import jakarta.validation.Valid;
@@ -31,10 +32,14 @@ public class AdminPostController {
 
     private final PostService postService;
     private final AiService aiService;
+    private final IndexNowService indexNowService;
 
-    public AdminPostController(PostService postService, AiService aiService) {
+    public AdminPostController(PostService postService,
+                               AiService aiService,
+                               IndexNowService indexNowService) {
         this.postService = postService;
         this.aiService = aiService;
+        this.indexNowService = indexNowService;
     }
 
     /**
@@ -95,5 +100,22 @@ public class AdminPostController {
     public Result<Map<String, String>> generateExcerpt(@RequestBody ExcerptGenRequest body) {
         String excerpt = aiService.generateExcerpt(body.getTitle(), body.getContent());
         return Result.success(Map.of("excerpt", excerpt));
+    }
+
+    /**
+     * IndexNow：批量推送全部已发布文章 URL（首次接入或补推时用）
+     * <p>一次请求同步给 Bing / Yandex / Seznam / Naver 等参与方。</p>
+     */
+    @PostMapping("/indexnow/submit-all")
+    public Result<IndexNowService.Result> indexNowSubmitAll() {
+        return Result.success(indexNowService.submitAllPublished());
+    }
+
+    /**
+     * IndexNow：按 slug 单篇推送（某篇没被抓到时手动重试）
+     */
+    @PostMapping("/indexnow/submit")
+    public Result<IndexNowService.Result> indexNowSubmit(@RequestParam String slug) {
+        return Result.success(indexNowService.submitPost(slug));
     }
 }

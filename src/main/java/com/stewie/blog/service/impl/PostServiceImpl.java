@@ -17,6 +17,7 @@ import com.stewie.blog.mapper.CategoryMapper;
 import com.stewie.blog.mapper.PostMapper;
 import com.stewie.blog.mapper.PostTagMapper;
 import com.stewie.blog.mapper.TagMapper;
+import com.stewie.blog.service.IndexNowService;
 import com.stewie.blog.service.PostService;
 import org.springframework.stereotype.Service;
 
@@ -31,11 +32,16 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
     private final CategoryMapper categoryMapper;
     private final TagMapper tagMapper;
     private final PostTagMapper postTagMapper;
+    private final IndexNowService indexNowService;
 
-    public PostServiceImpl(CategoryMapper categoryMapper, TagMapper tagMapper, PostTagMapper postTagMapper) {
+    public PostServiceImpl(CategoryMapper categoryMapper,
+                           TagMapper tagMapper,
+                           PostTagMapper postTagMapper,
+                           IndexNowService indexNowService) {
         this.categoryMapper = categoryMapper;
         this.tagMapper = tagMapper;
         this.postTagMapper = postTagMapper;
+        this.indexNowService = indexNowService;
     }
 
     @Override
@@ -171,6 +177,10 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         post.setLikes(0L);
         save(post);
         syncTags(post.getId(), req.getTags());
+        // IndexNow：新文章若是直接发布，立即推送 URL 让搜索引擎来抓
+        if (status == 1) {
+            indexNowService.submitPostAsync(post.getSlug());
+        }
         return post.getId();
     }
 
@@ -180,6 +190,8 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         if (post == null) {
             throw new BusinessException(ResultCode.POST_NOT_FOUND);
         }
+        // 变更前状态：用于判断是否已从"已发布"转为草稿（需推送触发重抓→404→下线）
+        Integer oldStatus = post.getStatus();
         // slug：若显式提供且合法且与现 slug 不同，则重新生成唯一 slug
         if (req.getSlug() != null && !req.getSlug().isBlank()) {
             String s = req.getSlug().trim();
@@ -206,12 +218,26 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         post.setReadingTime(req.getReadingTime() != null ? req.getReadingTime() : estimateReadingTime(req.getContent()));
         updateById(post);
         syncTags(id, req.getTags());
+        // IndexNow：处于已发布状态（新增发布/内容更新），或刚从已发布转为草稿，都推送
+        if (status == 1 || (oldStatus != null && oldStatus == 1)) {
+            indexNowService.submitPostAsync(post.getSlug());
+        }
     }
 
     @Override
     public void deletePost(Long id) {
+        Post post = getById(id);
+        if (post == null) {
+            throw new BusinessException(ResultCode.POST_NOT_FOUND);
+        }
+        // 先记下 slug 与状态，删除后再推送（触发重抓拿到 404 → 搜索引擎下线该 URL）
+        String slug = post.getSlug();
+        Integer status = post.getStatus();
         if (!removeById(id)) {
             throw new BusinessException(ResultCode.POST_NOT_FOUND);
+        }
+        if (status != null && status == 1) {
+            indexNowService.submitPostAsync(slug);
         }
     }
 
