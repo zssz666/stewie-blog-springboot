@@ -1,5 +1,6 @@
 package com.stewie.blog.dto.vo;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 import java.util.List;
@@ -17,6 +18,12 @@ public class AuthorVO {
     private String avatar;
     private List<String> skills;
     private List<SocialLinkVO> socials;
+    private List<MovieCover> movies;
+
+    public record MovieCover(
+            @NotBlank(message = "请填写影视标题") String title,
+            @NotBlank(message = "请填写封面链接或上传图片") String img) {
+    }
 
     @Data
     public static class SocialLinkVO {

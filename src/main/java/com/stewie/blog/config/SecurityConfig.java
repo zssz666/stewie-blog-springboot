@@ -5,6 +5,7 @@ import com.stewie.blog.security.RestAccessDeniedHandler;
 import com.stewie.blog.security.RestAuthenticationEntryPoint;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -51,6 +52,7 @@ public class SecurityConfig {
                 // 无状态会话
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/", "/articles").permitAll()
                         // 登录接口公开
                         .requestMatchers("/api/auth/login").permitAll()
                         // 公开内容接口

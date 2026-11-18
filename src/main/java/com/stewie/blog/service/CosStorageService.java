@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -51,17 +52,29 @@ public class CosStorageService {
                 && baseUrl != null && !baseUrl.isBlank();
     }
 
-    /** 上传文件到 COS，返回公有读访问 URL */
+    /** 上传文件到 COS（使用配置的默认目录前缀，如 covers），返回公有读访问 URL */
     public String upload(MultipartFile file) {
+        return upload(file, prefix);
+    }
+
+    /**
+     * 上传文件到 COS 指定目录，返回公有读访问 URL。
+     * <p>用于把不同用途的文件分目录存放（如 images/ 正文图、videos/ 正文视频、covers/ 封面），
+     * 但仍在同一个 bucket 内。folder 为空时退回配置的默认前缀。</p>
+     */
+    public String upload(MultipartFile file, String folder) {
         String original = file.getOriginalFilename();
         String ext = (original != null && original.contains("."))
                 ? original.substring(original.lastIndexOf('.') + 1).toLowerCase() : "jpg";
-        String safePrefix = (prefix == null || prefix.isBlank()) ? "" : prefix + "/";
+        String useFolder = (folder == null || folder.isBlank()) ? prefix : folder.trim();
+        String safePrefix = (useFolder == null || useFolder.isBlank()) ? "" : useFolder + "/";
         String key = safePrefix + UUID.randomUUID() + "." + ext;
 
         ObjectMetadata meta = new ObjectMetadata();
         meta.setContentLength(file.getSize());
-        meta.setContentType(file.getContentType());
+        // 必须给出可播放/可渲染的 Content-Type：若客户端发的是 application/octet-stream
+        // （curl、部分浏览器、.mov/.m4v 常见），COS 会照存，导致 <video> 拒绝播放、图片不渲染。
+        meta.setContentType(resolveContentType(file.getContentType(), ext));
 
         try {
             PutObjectRequest req = new PutObjectRequest(bucket, key, file.getInputStream(), meta);
@@ -73,5 +86,35 @@ public class CosStorageService {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "上传到 COS 失败：" + e.getMessage());
         }
         return baseUrl + "/" + key;
+    }
+
+    /** 扩展名 → MIME 兜底表（客户端 Content-Type 不可信时使用） */
+    private static final Map<String, String> EXT_MIME = Map.ofEntries(
+            Map.entry("jpg", "image/jpeg"),
+            Map.entry("jpeg", "image/jpeg"),
+            Map.entry("png", "image/png"),
+            Map.entry("gif", "image/gif"),
+            Map.entry("webp", "image/webp"),
+            Map.entry("mp4", "video/mp4"),
+            Map.entry("m4v", "video/mp4"),
+            Map.entry("mov", "video/quicktime"),
+            Map.entry("webm", "video/webm"),
+            Map.entry("ogv", "video/ogg"));
+
+    /**
+     * 决定写入 COS 的 Content-Type。
+     * <p>客户端的 Content-Type 只有在「明确是 image/* 或 video/*」时才采信；
+     * 其余情况（null、application/octet-stream、binary/octet-stream 等）一律按扩展名兜底，
+     * 否则浏览器拿到 octet-stream 的视频会直接不播。</p>
+     */
+    private static String resolveContentType(String declared, String ext) {
+        if (declared != null) {
+            String ct = declared.trim().toLowerCase();
+            if (ct.startsWith("image/") || ct.startsWith("video/")) {
+                return ct;
+            }
+        }
+        String byExt = EXT_MIME.get(ext);
+        return byExt != null ? byExt : "application/octet-stream";
     }
 }

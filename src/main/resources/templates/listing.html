@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title th:text="${title}">Stewie 的实验室</title>
+  <meta name="description" th:content="${description}" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" th:href="${canonical}" />
+  <link rel="prev" th:if="${previous != null}" th:href="${previous}" />
+  <link rel="next" th:if="${next != null}" th:href="${next}" />
+  <link rel="stylesheet" href="/article.css" />
+</head>
+<body>
+  <header class="site-nav">
+    <a class="site-nav__brand" href="/">Stewie 的实验室</a>
+    <nav class="site-nav__links"><a href="/">首页</a><a href="/articles">文章</a><a href="/about">关于</a></nav>
+  </header>
+  <main class="article-wrap">
+    <section class="article">
+      <h1 th:text="${heading}">全部实验报告</h1>
+      <p th:if="${#lists.isEmpty(posts)}">暂无文章。</p>
+      <article th:each="post : ${posts}">
+        <h2><a th:href="@{/post/{slug}(slug=${post.slug})}" th:text="${post.title}">文章标题</a></h2>
+        <time th:text="${post.date}"></time>
+        <p th:text="${post.excerpt}"></p>
+      </article>
+      <nav aria-label="文章分页" th:unless="${home}">
+        <a th:if="${previous != null}" th:href="${previous}" rel="prev">上一页</a>
+        <span th:text="|第 ${page} 页|"></span>
+        <a th:if="${next != null}" th:href="${next}" rel="next">下一页</a>
+      </nav>
+      <p th:if="${home}"><a href="/articles">查看全部文章</a></p>
+    </section>
+  </main>
+</body>
+</html>

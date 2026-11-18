@@ -10,8 +10,9 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 12MB
+      # 正文视频上传需要更大的上限；Nginx 侧也要同步放开 client_max_body_size，否则会先被 413 拦掉
+      max-file-size: ${UPLOAD_MAX_FILE:200MB}
+      max-request-size: ${UPLOAD_MAX_REQUEST:210MB}
 
 server:
   port: 8081
@@ -76,6 +77,9 @@ cos:
 upload:
   path: ${UPLOAD_DIR:./uploads}
   url-prefix: /uploads
+  # 正文/封面上传的体积上限（字节）；需 ≤ spring.servlet.multipart.max-file-size
+  image-max-size: ${UPLOAD_IMAGE_MAX:5242880}     # 图片 5MB
+  video-max-size: ${UPLOAD_VIDEO_MAX:104857600}   # 视频 100MB
 
 # Bing IndexNow：内容发布/更新/删除时主动推送 URL，搜索引擎立刻来抓
 # 密钥文件需与 key 同名且公开可访问：https://stewie.fun/<key>.txt（内容即密钥本身）

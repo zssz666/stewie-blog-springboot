@@ -2,6 +2,7 @@ package com.stewie.blog.common;
 
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.util.stream.Collectors;
@@ -23,6 +26,14 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /**
+     * multipart 单文件上限（配置值，如 200MB）。
+     * <p>Tomcat 在体积超限时不一定把限额塞进异常对象（getMaxUploadSize 常为 -1），
+     * 所以这里直接读配置来给出可操作的提示。</p>
+     */
+    @Value("${spring.servlet.multipart.max-file-size:}")
+    private String multipartMaxFileSize;
 
     /**
      * 业务异常
@@ -121,6 +132,34 @@ public class GlobalExceptionHandler {
     public Result<Void> handleAccessDenied(AccessDeniedException e) {
         log.warn("权限不足: {}", e.getMessage());
         return Result.error(ResultCode.FORBIDDEN);
+    }
+
+    /**
+     * 上传文件超过 multipart 上限（在进入 Controller 之前就被拦截）
+     * <p>不处理的话会落到兜底分支返回 500，前端只能看到「服务器内部错误」，无法判断是体积问题。</p>
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public Result<Void> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        long max = e.getMaxUploadSize();
+        String limit;
+        if (max > 0) {
+            limit = max >= 1024L * 1024L ? (max / (1024L * 1024L)) + "MB" : (max / 1024L) + "KB";
+        } else if (multipartMaxFileSize != null && !multipartMaxFileSize.isBlank()) {
+            limit = multipartMaxFileSize;
+        } else {
+            limit = "服务端限制";
+        }
+        log.warn("上传文件超过上限: {}", e.getMessage());
+        return Result.error(ResultCode.BAD_REQUEST, "文件体积超过上限（" + limit + "），请压缩后再上传");
+    }
+
+    /**
+     * 其它 multipart 解析异常（如请求体损坏、临时目录不可写）
+     */
+    @ExceptionHandler(MultipartException.class)
+    public Result<Void> handleMultipart(MultipartException e) {
+        log.warn("上传请求解析失败: {}", e.getMessage());
+        return Result.error(ResultCode.BAD_REQUEST, "上传请求解析失败：" + e.getMessage());
     }
 
     /**

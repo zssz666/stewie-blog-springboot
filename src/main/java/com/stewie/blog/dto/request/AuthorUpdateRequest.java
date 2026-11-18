@@ -1,5 +1,8 @@
 package com.stewie.blog.dto.request;
 
+import com.stewie.blog.dto.vo.AuthorVO.MovieCover;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.util.List;
@@ -16,6 +19,7 @@ public class AuthorUpdateRequest {
     private String avatar;
     private List<String> skills;
     private List<SocialLinkInput> socials;
+    private List<@NotNull @Valid MovieCover> movies;
 
     @Data
     public static class SocialLinkInput {

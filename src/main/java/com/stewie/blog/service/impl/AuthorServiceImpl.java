@@ -2,17 +2,23 @@ package com.stewie.blog.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.stewie.blog.common.BusinessException;
+import com.stewie.blog.common.ResultCode;
 import com.stewie.blog.dto.request.AuthorUpdateRequest;
 import com.stewie.blog.dto.vo.AuthorVO;
+import com.stewie.blog.dto.vo.AuthorVO.MovieCover;
 import com.stewie.blog.entity.Author;
 import com.stewie.blog.entity.SocialLink;
 import com.stewie.blog.mapper.AuthorMapper;
 import com.stewie.blog.mapper.SocialLinkMapper;
 import com.stewie.blog.service.AuthorService;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
 import java.util.Collections;
 import java.util.List;
 
@@ -40,6 +46,7 @@ public class AuthorServiceImpl extends ServiceImpl<AuthorMapper, Author> impleme
         vo.setBio(author.getBio());
         vo.setAvatar(author.getAvatar());
         vo.setSkills(parseSkills(author.getSkills()));
+        vo.setMovies(parseMovies(author.getMovies()));
 
         List<SocialLink> links = socialLinkMapper.selectList(
                 new LambdaQueryWrapper<SocialLink>()
@@ -56,6 +63,7 @@ public class AuthorServiceImpl extends ServiceImpl<AuthorMapper, Author> impleme
     }
 
     @Override
+    @Transactional
     public void updateAuthor(AuthorUpdateRequest req) {
         Author author = getOne(new LambdaQueryWrapper<Author>().last("LIMIT 1"));
         if (author == null) {
@@ -72,6 +80,7 @@ public class AuthorServiceImpl extends ServiceImpl<AuthorMapper, Author> impleme
                 // 序列化失败则保留原值
             }
         }
+        if (req.getMovies() != null) author.setMovies(serializeMovies(req.getMovies()));
         saveOrUpdate(author);
 
         if (req.getSocials() != null) {
@@ -89,6 +98,39 @@ public class AuthorServiceImpl extends ServiceImpl<AuthorMapper, Author> impleme
                 sl.setSort(sort++);
                 socialLinkMapper.insert(sl);
             }
+        }
+    }
+
+    private String serializeMovies(List<MovieCover> movies) {
+        List<MovieCover> normalized = movies.stream().map(movie -> {
+            String img = movie.img().strip();
+            URI uri;
+            try {
+                uri = URI.create(img);
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "影视封面链接格式不正确");
+            }
+            boolean webUrl = uri.getHost() != null && ("https".equalsIgnoreCase(uri.getScheme())
+                    || "http".equalsIgnoreCase(uri.getScheme()));
+            boolean uploaded = img.startsWith("/uploads/") && uri.normalize().getPath().startsWith("/uploads/");
+            if (!webUrl && !uploaded) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "影视封面需使用 HTTP(S) 图片链接或已上传的图片");
+            }
+            return new MovieCover(movie.title().strip(), img);
+        }).toList();
+        try {
+            return objectMapper.writeValueAsString(normalized);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("无法保存影视收藏", e);
+        }
+    }
+
+    private List<MovieCover> parseMovies(String json) {
+        if (json == null) return List.of();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<MovieCover>>() {});
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("无法读取影视收藏", e);
         }
     }
 

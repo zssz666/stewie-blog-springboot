@@ -24,6 +24,7 @@ public class Author {
     private String avatar;
     /** 技能数组存为 JSON 字符串，如 ["Vue 3","TypeScript"] */
     private String skills;
+    private String movies;
 
     @TableLogic
     private Integer deleted;
