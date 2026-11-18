@@ -53,9 +53,11 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
     }
 
     @Override
-    public PageResult<PostVO> pagePublishedPosts(long page, long size, String category, String tag) {
+    public PageResult<PostVO> pagePublishedPosts(long page, long size, PublishedPostFilter filter) {
         long safePage = page < 1 ? 1 : page;
         long safeSize = size < 1 ? 10 : Math.min(size, 100);
+        String category = filter.category();
+        String tag = filter.tag();
 
         Long categoryId = null;
         if (category != null && !category.isBlank()) {
@@ -84,6 +86,7 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
 
         LambdaQueryWrapper<Post> wrapper = new LambdaQueryWrapper<Post>()
                 .eq(Post::getStatus, 1)
+                .eq(filter.postType() != null, Post::getPostType, filter.postType())
                 .orderByDesc(Post::getPublishDate);
         if (categoryId != null) {
             wrapper.eq(Post::getCategoryId, categoryId);
@@ -169,6 +172,7 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         post.setContent(req.getContent());
         post.setCover(req.getCover());
         post.setCategoryId(req.getCategoryId());
+        post.setPostType(req.getPostType() == null ? Post.TYPE_TECHNICAL_ARTICLE : req.getPostType());
         post.setStatus(status);
         post.setPublishDate(parseDate(req.getPublishDate()));
         post.setPublishedAt(status == 1 ? LocalDateTime.now() : null);
@@ -204,6 +208,9 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
         post.setContent(req.getContent());
         post.setCover(req.getCover());
         post.setCategoryId(req.getCategoryId());
+        if (req.getPostType() != null) {
+            post.setPostType(req.getPostType());
+        }
         Integer status = req.getStatus() == null ? post.getStatus() : req.getStatus();
         if (status == 1 && post.getPublishedAt() == null) {
             post.setPublishedAt(LocalDateTime.now());
@@ -380,6 +387,7 @@ public class PostServiceImpl extends ServiceImpl<PostMapper, Post> implements Po
             vo.setCover(p.getCover());
             vo.setCoverColor(p.getCoverColor());
             vo.setCategory(p.getCategoryId() != null ? categoryNameMap.get(p.getCategoryId()) : null);
+            vo.setPostType(p.getPostType());
             List<String> tags = postTagsMap.getOrDefault(p.getId(), List.of());
             vo.setTags(tags);
             vo.setTag(tags.isEmpty() ? null : tags.get(0));

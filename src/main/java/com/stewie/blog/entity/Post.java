@@ -16,6 +16,9 @@ import java.time.LocalDateTime;
 @TableName("t_post")
 public class Post {
 
+    public static final int TYPE_QUICK_NOTE = 1;
+    public static final int TYPE_TECHNICAL_ARTICLE = 2;
+
     @TableId(type = IdType.AUTO)
     private Long id;
 
@@ -26,6 +29,7 @@ public class Post {
     private String coverColor;
     private String cover;
     private Long categoryId;
+    private Integer postType;
     private LocalDate publishDate;
     private Integer readingTime;
     private Long views;
@@ -38,4 +42,8 @@ public class Post {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime publishedAt;
+
+    public static boolean isValidPostType(int postType) {
+        return postType == TYPE_QUICK_NOTE || postType == TYPE_TECHNICAL_ARTICLE;
+    }
 }

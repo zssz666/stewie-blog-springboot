@@ -4,7 +4,9 @@ import com.stewie.blog.common.PageResult;
 import com.stewie.blog.common.Result;
 import com.stewie.blog.common.ResultCode;
 import com.stewie.blog.dto.vo.PostVO;
+import com.stewie.blog.entity.Post;
 import com.stewie.blog.service.PostService;
+import com.stewie.blog.service.PostService.PublishedPostFilter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,20 +30,25 @@ public class PublicPostController {
     }
 
     /**
-     * 文章列表（已发布，按发布日期倒序，分页 + 可选 分类/标签 过滤）
+     * 文章列表（已发布，按发布日期倒序，可按分类、标签和内容类型筛选）
      *
      * @param page     页码，从 1 开始，默认 1
      * @param size     每页条数，默认 10（后端限制 1~100）
      * @param category 分类名（可选）
      * @param tag      标签名（可选）
+     * @param postType 内容类型（1=随手记，2=技术文章，可选）
      */
     @GetMapping("/posts")
     public Result<PageResult<PostVO>> listPosts(
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size,
             @RequestParam(required = false) String category,
-            @RequestParam(required = false) String tag) {
-        return Result.success(postService.pagePublishedPosts(page, size, category, tag));
+            @RequestParam(required = false) String tag,
+            @RequestParam(required = false) Integer postType) {
+        if (postType != null && !Post.isValidPostType(postType)) {
+            return Result.error(ResultCode.BAD_REQUEST, "内容类型只能是 1（随手记）或 2（技术文章）");
+        }
+        return Result.success(postService.pagePublishedPosts(page, size, new PublishedPostFilter(category, tag, postType)));
     }
 
     /**

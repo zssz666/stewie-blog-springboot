@@ -10,6 +10,8 @@ import java.util.List;
 
 public interface PostService extends IService<Post> {
 
+    record PublishedPostFilter(String category, String tag, Integer postType) {}
+
     /**
      * 查询已发布文章列表（按发布日期倒序），含分类名与标签名
      */
@@ -20,10 +22,9 @@ public interface PostService extends IService<Post> {
      *
      * @param page     页码（从 1 开始）
      * @param size     每页条数
-     * @param category 分类名（可选，传 null/空表示不过滤）
-     * @param tag      标签名（可选，传 null/空表示不过滤）
+     * @param filter   可选的分类、标签与内容类型
      */
-    PageResult<PostVO> pagePublishedPosts(long page, long size, String category, String tag);
+    PageResult<PostVO> pagePublishedPosts(long page, long size, PublishedPostFilter filter);
 
     /**
      * 根据 slug 查询文章详情（不修改浏览量，浏览量由独立埋点接口统计）

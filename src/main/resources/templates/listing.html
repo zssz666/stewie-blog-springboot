@@ -14,7 +14,13 @@
 <body>
   <header class="site-nav">
     <a class="site-nav__brand" href="/">Stewie 的实验室</a>
-    <nav class="site-nav__links"><a href="/">首页</a><a href="/articles">文章</a><a href="/about">关于</a></nav>
+    <nav class="site-nav__links">
+      <a href="/">首页</a>
+      <a href="/articles">全部文章</a>
+      <a th:href="@{/articles(postType=2)}">技术文章</a>
+      <a th:href="@{/articles(postType=1)}">随手记</a>
+      <a href="/about">关于</a>
+    </nav>
   </header>
   <main class="article-wrap">
     <section class="article">

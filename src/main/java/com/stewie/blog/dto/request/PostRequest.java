@@ -1,5 +1,8 @@
 package com.stewie.blog.dto.request;
 
+import com.stewie.blog.entity.Post;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
@@ -26,6 +29,10 @@ public class PostRequest {
     private String cover;
 
     private Long categoryId;
+
+    @Min(value = Post.TYPE_QUICK_NOTE, message = "内容类型只能是 1（随手记）或 2（技术文章）")
+    @Max(value = Post.TYPE_TECHNICAL_ARTICLE, message = "内容类型只能是 1（随手记）或 2（技术文章）")
+    private Integer postType;
 
     /** 标签名列表（可空，自动建/关联） */
     private List<String> tags;

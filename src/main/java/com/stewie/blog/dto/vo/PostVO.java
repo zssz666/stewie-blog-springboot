@@ -6,7 +6,6 @@ import java.util.List;
 
 /**
  * 文章视图对象（对齐前端 Post 接口）
- * 前端字段：id/slug/title/excerpt/content/cover/coverColor/category/tag/tags/date/readingTime/views
  */
 @Data
 public class PostVO {
@@ -21,6 +20,7 @@ public class PostVO {
 
     /** 分类名（由 category_id 关联 t_category.name） */
     private String category;
+    private Integer postType;
 
     /** 标签名（前端单标签，取首个，向后兼容） */
     private String tag;
