@@ -58,6 +58,7 @@ public class SecurityConfig {
                         // 公开内容接口
                         .requestMatchers("/api/posts/**").permitAll()
                         .requestMatchers("/api/categories", "/api/tags", "/api/author").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/photos").permitAll()
                         // 搜索接口公开
                         .requestMatchers("/api/search").permitAll()
                         // Sitemap（供 Bing / Google 爬取，含文章 slug）

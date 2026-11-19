@@ -8,7 +8,9 @@ import com.stewie.blog.service.CosStorageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -81,10 +83,7 @@ public class UploadController {
     public Result<UploadVO> upload(@RequestParam("file") MultipartFile file,
                                    @RequestParam(value = "type", required = false) String type,
                                    @RequestParam(value = "scene", required = false) String scene) {
-        if (file == null || file.isEmpty()) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "请选择要上传的文件");
-        }
-
+        requireFile(file);
         String kind = resolveKind(file, type);
         String ext = extensionOf(file);
         String folder;
@@ -98,25 +97,12 @@ public class UploadController {
             maxSize = videoMaxSize;
             folder = VIDEO_FOLDER;
         } else {
-            if (!IMAGE_EXT.contains(ext)) {
-                throw new BusinessException(ResultCode.BAD_REQUEST,
-                        "不支持的图片格式：" + ext + "（支持 jpg / png / gif / webp）");
-            }
+            requireImageExtension(ext);
             maxSize = imageMaxSize;
             folder = "cover".equalsIgnoreCase(scene) ? COVER_FOLDER : IMAGE_FOLDER;
         }
 
-        if (file.getSize() > maxSize) {
-            throw new BusinessException(ResultCode.BAD_REQUEST,
-                    (KIND_VIDEO.equals(kind) ? "视频" : "图片") + "大小不能超过 " + humanSize(maxSize)
-                            + "（当前 " + humanSize(file.getSize()) + "）");
-        }
-
-        // 校验文件头与声明的类型一致，避免仅靠扩展名 / Content-Type 被伪造绕过
-        if (!matchesMagic(file, kind)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST,
-                    "文件内容与格式不符，请确认上传的是真实的" + (KIND_VIDEO.equals(kind) ? "视频" : "图片") + "文件");
-        }
+        validateMedia(file, kind, maxSize);
 
         String url;
         if (cosStorage.isConfigured()) {
@@ -127,6 +113,58 @@ public class UploadController {
         }
         log.info("媒体上传成功 type={} size={} url={}", kind, file.getSize(), url);
         return Result.success(new UploadVO(url, kind, file.getSize()));
+    }
+
+    @PostMapping("/photos")
+    public Result<UploadVO> uploadPhoto(@RequestParam("file") MultipartFile file, @RequestParam("album") String album) {
+        requireFile(file);
+        requireImageExtension(extensionOf(file));
+        validateMedia(file, KIND_IMAGE, imageMaxSize);
+        String url = cosStorage.uploadGalleryPhoto(file, album);
+        return Result.success(new UploadVO(url, KIND_IMAGE, file.getSize()));
+    }
+
+    @PostMapping("/photos/albums")
+    public Result<Void> createAlbum(@RequestParam("album") String album) {
+        cosStorage.createGalleryAlbum(album);
+        return Result.success();
+    }
+
+    @PutMapping("/photos/albums/cover")
+    public Result<Void> setAlbumCover(@RequestParam("album") String album, @RequestParam("name") String name) {
+        cosStorage.setGalleryCover(album, name);
+        return Result.success();
+    }
+
+    @DeleteMapping("/photos")
+    public Result<Void> deletePhoto(@RequestParam("album") String album, @RequestParam("name") String name) {
+        cosStorage.deleteGalleryPhoto(album, name);
+        return Result.success();
+    }
+
+    private static void requireFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "请选择要上传的文件");
+        }
+    }
+
+    private static void requireImageExtension(String ext) {
+        if (!IMAGE_EXT.contains(ext)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST,
+                    "不支持的图片格式：" + ext + "（支持 jpg / png / gif / webp）");
+        }
+    }
+
+    private void validateMedia(MultipartFile file, String kind, long maxSize) {
+        String label = KIND_VIDEO.equals(kind) ? "视频" : "图片";
+        if (file.getSize() > maxSize) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, label + "大小不能超过 " + humanSize(maxSize)
+                    + "（当前 " + humanSize(file.getSize()) + "）");
+        }
+        // 扩展名和 Content-Type 都由客户端提供，不能单独用来判断文件类型。
+        if (!matchesMagic(file, kind)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "文件内容与格式不符，请确认上传的是真实的" + label + "文件");
+        }
     }
 
     /** 判断媒体类型：显式 type 参数优先，其次 Content-Type，最后按扩展名兜底 */

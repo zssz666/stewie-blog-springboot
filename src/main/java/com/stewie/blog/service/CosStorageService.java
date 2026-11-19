@@ -1,6 +1,9 @@
 package com.stewie.blog.service;
 
 import com.qcloud.cos.COSClient;
+import com.qcloud.cos.model.COSObjectSummary;
+import com.qcloud.cos.model.ListObjectsRequest;
+import com.qcloud.cos.model.ObjectListing;
 import com.qcloud.cos.model.ObjectMetadata;
 import com.qcloud.cos.model.PutObjectRequest;
 import com.stewie.blog.common.BusinessException;
@@ -10,9 +13,17 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.util.UriUtils;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /**
@@ -25,6 +36,11 @@ import java.util.UUID;
 public class CosStorageService {
 
     private static final Logger log = LoggerFactory.getLogger(CosStorageService.class);
+    private static final String GALLERY_PREFIX = "my-imgs/";
+    private static final String UNCATEGORIZED_ALBUM = "未归档";
+    private static final String ALBUM_COVER = ".album-cover";
+    private static final int MAX_ALBUM_NAME_LENGTH = 64;
+    private static final int MAX_COS_KEY_BYTES = 850;
 
     private final COSClient cosClient;
     private final String secretId;
@@ -63,18 +79,177 @@ public class CosStorageService {
      * 但仍在同一个 bucket 内。folder 为空时退回配置的默认前缀。</p>
      */
     public String upload(MultipartFile file, String folder) {
-        String original = file.getOriginalFilename();
-        String ext = (original != null && original.contains("."))
-                ? original.substring(original.lastIndexOf('.') + 1).toLowerCase() : "jpg";
+        String ext = uploadExtension(file);
         String useFolder = (folder == null || folder.isBlank()) ? prefix : folder.trim();
         String safePrefix = (useFolder == null || useFolder.isBlank()) ? "" : useFolder + "/";
         String key = safePrefix + UUID.randomUUID() + "." + ext;
+        return put(file, key, resolveContentType(file.getContentType(), ext));
+    }
 
+    public record GalleryPhoto(String name, String url) {}
+
+    public record GalleryAlbum(String name, GalleryPhoto cover, List<GalleryPhoto> photos) {}
+
+    public List<GalleryAlbum> listGalleryAlbums() {
+        requireGalleryStorage();
+        Map<String, List<COSObjectSummary>> albums = new TreeMap<>(Comparator.reverseOrder());
+        for (COSObjectSummary object : listGalleryObjects()) {
+            if (!object.getKey().startsWith(GALLERY_PREFIX)) continue;
+            String relativeKey = object.getKey().substring(GALLERY_PREFIX.length());
+            int folderSeparator = relativeKey.indexOf('/');
+            String album = folderSeparator < 0 ? UNCATEGORIZED_ALBUM : relativeKey.substring(0, folderSeparator);
+            if (folderSeparator >= 0 && (!isAlbumName(album) || UNCATEGORIZED_ALBUM.equals(album))) continue;
+
+            String file = relativeKey.substring(folderSeparator + 1);
+            boolean albumMarker = ALBUM_COVER.equals(file) || (folderSeparator >= 0 && file.isEmpty());
+            if (albumMarker || isGalleryImage(file)) {
+                albums.computeIfAbsent(album, ignored -> new ArrayList<>()).add(object);
+            }
+        }
+        return albums.entrySet().stream()
+                .sorted(Comparator.comparing(album -> UNCATEGORIZED_ALBUM.equals(album.getKey())))
+                .map(album -> galleryAlbum(album.getKey(), album.getValue()))
+                .toList();
+    }
+
+    private List<COSObjectSummary> listGalleryObjects() {
+        ListObjectsRequest request = new ListObjectsRequest()
+                .withBucketName(bucket)
+                .withPrefix(GALLERY_PREFIX);
+        var objects = new ArrayList<COSObjectSummary>();
+        ObjectListing page;
+        do {
+            page = cosClient.listObjects(request);
+            objects.addAll(page.getObjectSummaries());
+            request.setMarker(page.getNextMarker());
+        } while (page.isTruncated());
+
+        return objects;
+    }
+
+    private GalleryAlbum galleryAlbum(String album, List<COSObjectSummary> objects) {
+        String folder = albumPrefix(album);
+        String coverKey = folder + ALBUM_COVER;
+        List<GalleryPhoto> photos = objects.stream()
+                .filter(object -> isGalleryImage(object.getKey().substring(folder.length())))
+                .sorted(Comparator.comparing(COSObjectSummary::getLastModified).reversed())
+                .map(object -> {
+                    String name = object.getKey().substring(folder.length());
+                    return new GalleryPhoto(name, baseUrl + "/" + UriUtils.encodePath(folder, StandardCharsets.UTF_8)
+                            + UriUtils.encode(name, StandardCharsets.UTF_8));
+                })
+                .toList();
+        if (photos.isEmpty()) return new GalleryAlbum(album, null, photos);
+
+        // Without a designated cover, use the most recently added photo in this album.
+        GalleryPhoto cover = photos.get(0);
+        if (objects.stream().anyMatch(object -> coverKey.equals(object.getKey()))) {
+            String selectedName = readCoverName(coverKey);
+            cover = photos.stream().filter(photo -> photo.name().equals(selectedName)).findFirst().orElse(cover);
+        }
+        return new GalleryAlbum(album, cover, photos);
+    }
+
+    private String readCoverName(String coverKey) {
+        try (var cover = cosClient.getObject(bucket, coverKey)) {
+            byte[] content = cover.getObjectContent().readNBytes(MAX_COS_KEY_BYTES + 1);
+            if (content.length > MAX_COS_KEY_BYTES) {
+                throw new BusinessException(ResultCode.INTERNAL_ERROR, "相册封面配置超出 COS 对象名长度");
+            }
+            return new String(content, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            log.error("读取相册封面配置失败 key={}", coverKey, exception);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "读取相册封面失败");
+        }
+    }
+
+    public void createGalleryAlbum(String album) {
+        if (UNCATEGORIZED_ALBUM.equals(album)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "「未归档」是保留的相册名");
+        }
+        requireGalleryStorage();
+        putAlbumMetadata(albumPrefix(album), "");
+    }
+
+    public void setGalleryCover(String album, String name) {
+        String folder = albumPrefix(album);
+        requireImageName(name);
+        requireGalleryStorage();
+        if (!cosClient.doesObjectExist(bucket, folder + name)) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "相册中找不到这张照片");
+        }
+        putAlbumMetadata(folder + ALBUM_COVER, name);
+    }
+
+    public String uploadGalleryPhoto(MultipartFile file, String album) {
+        String folder = albumPrefix(album);
+        requireGalleryStorage();
+        String ext = uploadExtension(file);
+        String key = folder + UUID.randomUUID() + "." + ext;
+        put(file, key, EXT_MIME.get(ext));
+        return baseUrl + "/" + UriUtils.encodePath(key, StandardCharsets.UTF_8);
+    }
+
+    public void deleteGalleryPhoto(String album, String name) {
+        String folder = albumPrefix(album);
+        requireImageName(name);
+        requireGalleryStorage();
+        cosClient.deleteObject(bucket, folder + name);
+    }
+
+    private void putAlbumMetadata(String key, String content) {
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        var metadata = new ObjectMetadata();
+        metadata.setContentLength(bytes.length);
+        metadata.setContentType("text/plain; charset=utf-8");
+        cosClient.putObject(new PutObjectRequest(bucket, key, new ByteArrayInputStream(bytes), metadata));
+    }
+
+    private static String albumPrefix(String name) {
+        if (!isAlbumName(name)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "相册名无效，请使用不含斜杠的名称");
+        }
+        return UNCATEGORIZED_ALBUM.equals(name) ? GALLERY_PREFIX : GALLERY_PREFIX + name + "/";
+    }
+
+    private static boolean isAlbumName(String name) {
+        return name != null && !name.isBlank() && name.equals(name.strip()) && name.length() <= MAX_ALBUM_NAME_LENGTH
+                && !name.equals(".") && !name.equals("..")
+                && name.chars().noneMatch(character -> character == '/' || character == '\\' || Character.isISOControl(character));
+    }
+
+    private static void requireImageName(String name) {
+        if (!isGalleryImage(name)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "照片文件名无效");
+        }
+    }
+
+    private void requireGalleryStorage() {
+        if (!isConfigured()) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "照片墙的 COS 存储未配置");
+        }
+    }
+
+    private static boolean isGalleryImage(String name) {
+        int extensionStart = name.lastIndexOf('.');
+        if (extensionStart <= 0 || name.chars().anyMatch(character -> character == '/' || character == '\\'
+                || Character.isISOControl(character))) return false;
+        String extension = name.substring(extensionStart + 1).toLowerCase(Locale.ROOT);
+        return EXT_MIME.getOrDefault(extension, "").startsWith("image/");
+    }
+
+    private static String uploadExtension(MultipartFile file) {
+        String original = file.getOriginalFilename();
+        return (original != null && original.contains("."))
+                ? original.substring(original.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT) : "jpg";
+    }
+
+    private String put(MultipartFile file, String key, String contentType) {
         ObjectMetadata meta = new ObjectMetadata();
         meta.setContentLength(file.getSize());
         // 必须给出可播放/可渲染的 Content-Type：若客户端发的是 application/octet-stream
         // （curl、部分浏览器、.mov/.m4v 常见），COS 会照存，导致 <video> 拒绝播放、图片不渲染。
-        meta.setContentType(resolveContentType(file.getContentType(), ext));
+        meta.setContentType(contentType);
 
         try {
             PutObjectRequest req = new PutObjectRequest(bucket, key, file.getInputStream(), meta);
