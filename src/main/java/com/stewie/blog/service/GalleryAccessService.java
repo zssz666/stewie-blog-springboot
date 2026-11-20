@@ -81,6 +81,12 @@ public class GalleryAccessService {
         return storage.uploadGalleryPhoto(file, album, Date.from(Instant.now().plus(LINK_LIFETIME)));
     }
 
+    public void setLiveVideo(MultipartFile file, String album, String name) {
+        CosStorageService.requireAlbumName(album);
+        registerAlbumForSignedLinks(album);
+        storage.setGalleryLiveVideo(file, album, name);
+    }
+
     private void registerAlbumForSignedLinks(String album) {
         database.update("""
                 INSERT INTO t_gallery_album_access (album_name) VALUES (?)

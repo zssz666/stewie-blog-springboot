@@ -35,6 +35,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 腾讯云 COS 对象存储封装。
@@ -49,6 +50,7 @@ public class CosStorageService {
     private static final String GALLERY_PREFIX = "my-imgs/";
     private static final String UNCATEGORIZED_ALBUM = "未归档";
     private static final String ALBUM_COVER = ".album-cover";
+    private static final String LIVE_VIDEO_SUFFIX = ".live";
     private static final int MAX_ALBUM_NAME_LENGTH = 64;
     private static final int MAX_COS_KEY_BYTES = 850;
     private static final Duration COS_PROBE_TIMEOUT = Duration.ofSeconds(5);
@@ -98,7 +100,11 @@ public class CosStorageService {
         return put(file, key, resolveContentType(file.getContentType(), ext));
     }
 
-    public record GalleryPhoto(String name, String url) {}
+    public record GalleryPhoto(String name, String url, String liveVideoUrl) {
+        public GalleryPhoto(String name, String url) {
+            this(name, url, null);
+        }
+    }
 
     public record GalleryAlbum(String name, GalleryPhoto cover, List<GalleryPhoto> photos, boolean locked) {
         public GalleryAlbum(String name, GalleryPhoto cover, List<GalleryPhoto> photos) {
@@ -118,7 +124,7 @@ public class CosStorageService {
 
             String file = relativeKey.substring(folderSeparator + 1);
             boolean albumMarker = ALBUM_COVER.equals(file) || (folderSeparator >= 0 && file.isEmpty());
-            if (albumMarker || isGalleryImage(file)) {
+            if (albumMarker || isGalleryImage(file) || isGalleryLiveVideo(file)) {
                 albums.computeIfAbsent(album, ignored -> new ArrayList<>()).add(object);
             }
         }
@@ -142,7 +148,11 @@ public class CosStorageService {
     public GalleryAlbum signGalleryAlbum(GalleryAlbum album, Date expiresAt) {
         String folder = albumPrefix(album.name());
         var photos = album.photos().stream()
-                .map(photo -> new GalleryPhoto(photo.name(), signGalleryPhoto(folder + photo.name(), expiresAt)))
+                .map(photo -> {
+                    String key = folder + photo.name();
+                    String liveUrl = photo.liveVideoUrl() == null ? null : signGalleryPhoto(key + LIVE_VIDEO_SUFFIX, expiresAt);
+                    return new GalleryPhoto(photo.name(), signGalleryPhoto(key, expiresAt), liveUrl);
+                })
                 .toList();
         var cover = photos.stream().filter(photo -> album.cover() != null && photo.name().equals(album.cover().name()))
                 .findFirst().orElse(null);
@@ -159,12 +169,14 @@ public class CosStorageService {
         String folder = albumPrefix(album.name());
         for (var photo : album.photos()) {
             String key = folder + photo.name();
-            makeGalleryObjectPrivate(key);
-            requirePrivateGalleryObject(key, photo.url());
+            makeGalleryObjectPrivate(key, photo.url());
+            if (photo.liveVideoUrl() != null) {
+                makeGalleryObjectPrivate(key + LIVE_VIDEO_SUFFIX, photo.liveVideoUrl());
+            }
         }
     }
 
-    private void makeGalleryObjectPrivate(String key) {
+    private void makeGalleryObjectPrivate(String key, String url) {
         try {
             cosClient.setObjectAcl(bucket, key, CannedAccessControlList.Private);
         } catch (CosServiceException exception) {
@@ -173,6 +185,7 @@ public class CosStorageService {
             }
             throw exception;
         }
+        requirePrivateGalleryObject(key, url);
     }
 
     private void requirePrivateGalleryObject(String key, String configuredUrl) {
@@ -218,20 +231,23 @@ public class CosStorageService {
     private GalleryAlbum galleryAlbum(String album, List<COSObjectSummary> objects) {
         String folder = albumPrefix(album);
         String coverKey = folder + ALBUM_COVER;
+        var keys = objects.stream().map(COSObjectSummary::getKey).collect(Collectors.toSet());
         List<GalleryPhoto> photos = objects.stream()
                 .filter(object -> isGalleryImage(object.getKey().substring(folder.length())))
                 .sorted(Comparator.comparing(COSObjectSummary::getLastModified).reversed())
                 .map(object -> {
                     String name = object.getKey().substring(folder.length());
-                    return new GalleryPhoto(name, baseUrl + "/" + UriUtils.encodePath(folder, StandardCharsets.UTF_8)
-                            + UriUtils.encode(name, StandardCharsets.UTF_8));
+                    String url = baseUrl + "/" + UriUtils.encodePath(folder, StandardCharsets.UTF_8)
+                            + UriUtils.encode(name, StandardCharsets.UTF_8);
+                    String liveUrl = keys.contains(object.getKey() + LIVE_VIDEO_SUFFIX) ? url + LIVE_VIDEO_SUFFIX : null;
+                    return new GalleryPhoto(name, url, liveUrl);
                 })
                 .toList();
         if (photos.isEmpty()) return new GalleryAlbum(album, null, photos);
 
         // Without a designated cover, use the most recently added photo in this album.
         GalleryPhoto cover = photos.get(0);
-        if (objects.stream().anyMatch(object -> coverKey.equals(object.getKey()))) {
+        if (keys.contains(coverKey)) {
             String selectedName = readCoverName(coverKey);
             cover = photos.stream().filter(photo -> photo.name().equals(selectedName)).findFirst().orElse(cover);
         }
@@ -281,11 +297,34 @@ public class CosStorageService {
         return signGalleryPhoto(key, expiresAt);
     }
 
+    void setGalleryLiveVideo(MultipartFile file, String album, String name) {
+        requireImageName(name);
+        requireGalleryStorage();
+        String photoKey = albumPrefix(album) + name;
+        if (!cosClient.doesObjectExist(bucket, photoKey)) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "相册中找不到这张照片");
+        }
+
+        String videoKey = photoKey + LIVE_VIDEO_SUFFIX;
+        put(file, videoKey, EXT_MIME.get(uploadExtension(file)));
+        if (!cosClient.doesObjectExist(bucket, photoKey)) {
+            cosClient.deleteObject(bucket, videoKey);
+            throw new BusinessException(ResultCode.NOT_FOUND, "照片已删除，实况视频未保存");
+        }
+    }
+
+    public void removeGalleryLiveVideo(String album, String name) {
+        requireImageName(name);
+        requireGalleryStorage();
+        cosClient.deleteObject(bucket, albumPrefix(album) + name + LIVE_VIDEO_SUFFIX);
+    }
+
     public void deleteGalleryPhoto(String album, String name) {
         String folder = albumPrefix(album);
         requireImageName(name);
         requireGalleryStorage();
         cosClient.deleteObject(bucket, folder + name);
+        cosClient.deleteObject(bucket, folder + name + LIVE_VIDEO_SUFFIX);
     }
 
     private void putAlbumMetadata(String key, String content) {
@@ -331,6 +370,11 @@ public class CosStorageService {
                 || Character.isISOControl(character))) return false;
         String extension = name.substring(extensionStart + 1).toLowerCase(Locale.ROOT);
         return EXT_MIME.getOrDefault(extension, "").startsWith("image/");
+    }
+
+    private static boolean isGalleryLiveVideo(String name) {
+        return name.endsWith(LIVE_VIDEO_SUFFIX)
+                && isGalleryImage(name.substring(0, name.length() - LIVE_VIDEO_SUFFIX.length()));
     }
 
     private static String uploadExtension(MultipartFile file) {

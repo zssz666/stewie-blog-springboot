@@ -52,10 +52,11 @@ public class UploadController {
 
     private static final String KIND_IMAGE = "image";
     private static final String KIND_VIDEO = "video";
-    private static final long GALLERY_PHOTO_MAX_SIZE = 10L * 1024 * 1024;
+    private static final long GALLERY_MEDIA_MAX_SIZE = 10L * 1024 * 1024;
 
     private static final Set<String> IMAGE_EXT = Set.of("jpg", "jpeg", "png", "gif", "webp");
     private static final Set<String> VIDEO_EXT = Set.of("mp4", "webm", "mov", "m4v", "ogv");
+    private static final Set<String> LIVE_VIDEO_EXT = Set.of("mp4", "mov");
 
     /** 封面图沿用历史目录 covers/，正文媒体分到 images/ 与 videos/ */
     private static final String COVER_FOLDER = "covers";
@@ -149,9 +150,27 @@ public class UploadController {
     public Result<UploadVO> uploadPhoto(@RequestParam("file") MultipartFile file, @RequestParam("album") String album) {
         requireFile(file);
         requireImageExtension(extensionOf(file));
-        validateMedia(file, KIND_IMAGE, GALLERY_PHOTO_MAX_SIZE);
+        validateMedia(file, KIND_IMAGE, GALLERY_MEDIA_MAX_SIZE);
         String url = galleryAccess.uploadPhoto(file, album);
         return Result.success(new UploadVO(url, KIND_IMAGE, file.getSize()));
+    }
+
+    @PutMapping("/photos/live")
+    public Result<Void> setLiveVideo(@RequestParam("album") String album, @RequestParam("name") String name,
+                                     @RequestParam("file") MultipartFile file) {
+        requireFile(file);
+        if (!LIVE_VIDEO_EXT.contains(extensionOf(file))) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "实况视频支持 MP4 和 MOV");
+        }
+        validateMedia(file, KIND_VIDEO, GALLERY_MEDIA_MAX_SIZE);
+        galleryAccess.setLiveVideo(file, album, name);
+        return Result.success();
+    }
+
+    @DeleteMapping("/photos/live")
+    public Result<Void> removeLiveVideo(@RequestParam("album") String album, @RequestParam("name") String name) {
+        cosStorage.removeGalleryLiveVideo(album, name);
+        return Result.success();
     }
 
     @PostMapping("/photos/albums")
