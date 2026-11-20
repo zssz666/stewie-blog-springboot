@@ -18,7 +18,7 @@ import java.util.Map;
 
 /**
  * AI 摘要生成（腾讯 TokenHub 平台，OpenAI 兼容接口）
- * <p>默认模型 {@code deepseek-v4-flash-202605}（DeepSeek-V4 Flash）。
+ * <p>默认模型 {@code deepseek-v4.1-flash-1017}。
  * API Key 通过环境变量 {@code AI_API_KEY} </p>
  */
 @Slf4j
@@ -33,7 +33,7 @@ public class AiServiceImpl implements AiService {
     @Value("${ai.api-key:}")
     private String apiKey;
 
-    @Value("${ai.model:deepseek-v4-flash-202605}")
+    @Value("${ai.model:deepseek-v4.1-flash-1017}")
     private String model;
 
     /** 是否开启模型思考（推理）模式；默认关闭，响应更快更省 */
@@ -82,8 +82,7 @@ public class AiServiceImpl implements AiService {
                 "content", "标题：" + (title == null ? "" : title) + "\n正文：\n" + text
         ));
         reqBody.put("messages", messages);
-        // deepseek-v4-flash 在 TokenHub 默认开启思考模式，推理会吃掉 max_tokens 预算，
-        // 长文时 content 被挤空；显式关闭思考，content 直接产出、更快更省。
+        // TokenHub 默认开启思考模式，推理可能用完 max_tokens，让摘要内容为空。
         if (!enableThinking) {
             reqBody.put("thinking", Map.of("type", "disabled"));
         }

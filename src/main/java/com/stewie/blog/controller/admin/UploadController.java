@@ -5,12 +5,18 @@ import com.stewie.blog.common.Result;
 import com.stewie.blog.common.ResultCode;
 import com.stewie.blog.dto.vo.UploadVO;
 import com.stewie.blog.service.CosStorageService;
+import com.stewie.blog.service.CosStorageService.GalleryAlbum;
+import com.stewie.blog.service.GalleryAccessService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -45,6 +52,7 @@ public class UploadController {
 
     private static final String KIND_IMAGE = "image";
     private static final String KIND_VIDEO = "video";
+    private static final long GALLERY_PHOTO_MAX_SIZE = 10L * 1024 * 1024;
 
     private static final Set<String> IMAGE_EXT = Set.of("jpg", "jpeg", "png", "gif", "webp");
     private static final Set<String> VIDEO_EXT = Set.of("mp4", "webm", "mov", "m4v", "ogv");
@@ -55,17 +63,20 @@ public class UploadController {
     private static final String VIDEO_FOLDER = "videos";
 
     private final CosStorageService cosStorage;
+    private final GalleryAccessService galleryAccess;
     private final String uploadPath;
     private final String urlPrefix;
     private final long imageMaxSize;
     private final long videoMaxSize;
 
     public UploadController(CosStorageService cosStorage,
+                            GalleryAccessService galleryAccess,
                             @Value("${upload.path:./uploads}") String uploadPath,
                             @Value("${upload.url-prefix:/uploads}") String urlPrefix,
                             @Value("${upload.image-max-size:5242880}") long imageMaxSize,
                             @Value("${upload.video-max-size:104857600}") long videoMaxSize) {
         this.cosStorage = cosStorage;
+        this.galleryAccess = galleryAccess;
         this.uploadPath = uploadPath;
         this.urlPrefix = urlPrefix;
         this.imageMaxSize = imageMaxSize;
@@ -115,12 +126,31 @@ public class UploadController {
         return Result.success(new UploadVO(url, kind, file.getSize()));
     }
 
+    @GetMapping("/photos")
+    public ResponseEntity<Result<List<GalleryAlbum>>> photos() {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Result.success(galleryAccess.listAdminAlbums()));
+    }
+
+    @PutMapping("/photos/albums/password")
+    public Result<Void> setAlbumPassword(@RequestParam("album") String album, @RequestBody PasswordInput input) {
+        galleryAccess.setPassword(album, input.password());
+        return Result.success();
+    }
+
+    @DeleteMapping("/photos/albums/password")
+    public Result<Void> removeAlbumPassword(@RequestParam("album") String album) {
+        galleryAccess.removePassword(album);
+        return Result.success();
+    }
+
+    public record PasswordInput(String password) {}
+
     @PostMapping("/photos")
     public Result<UploadVO> uploadPhoto(@RequestParam("file") MultipartFile file, @RequestParam("album") String album) {
         requireFile(file);
         requireImageExtension(extensionOf(file));
-        validateMedia(file, KIND_IMAGE, imageMaxSize);
-        String url = cosStorage.uploadGalleryPhoto(file, album);
+        validateMedia(file, KIND_IMAGE, GALLERY_PHOTO_MAX_SIZE);
+        String url = galleryAccess.uploadPhoto(file, album);
         return Result.success(new UploadVO(url, KIND_IMAGE, file.getSize()));
     }
 

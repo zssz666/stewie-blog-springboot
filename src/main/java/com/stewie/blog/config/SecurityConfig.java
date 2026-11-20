@@ -59,6 +59,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/posts/**").permitAll()
                         .requestMatchers("/api/categories", "/api/tags", "/api/author").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/photos").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/photos/unlock").permitAll()
                         // 搜索接口公开
                         .requestMatchers("/api/search").permitAll()
                         // Sitemap（供 Bing / Google 爬取，含文章 slug）
@@ -75,6 +76,7 @@ public class SecurityConfig {
                         .requestMatchers("/uploads/**").permitAll()
                         // 需要登录
                         .requestMatchers("/api/auth/me").authenticated()
+                        .requestMatchers("/api/admin/photos", "/api/admin/photos/**").hasRole("ADMIN")
                         // 其余一律需登录（为后续管理/写接口预留）
                         .anyRequest().authenticated())
                 // 未登录/无权限返回 JSON

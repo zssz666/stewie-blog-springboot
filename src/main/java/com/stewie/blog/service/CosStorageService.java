@@ -1,7 +1,11 @@
 package com.stewie.blog.service;
 
 import com.qcloud.cos.COSClient;
+import com.qcloud.cos.exception.CosServiceException;
+import com.qcloud.cos.http.HttpMethodName;
+import com.qcloud.cos.model.CannedAccessControlList;
 import com.qcloud.cos.model.COSObjectSummary;
+import com.qcloud.cos.model.GeneratePresignedUrlRequest;
 import com.qcloud.cos.model.ListObjectsRequest;
 import com.qcloud.cos.model.ObjectListing;
 import com.qcloud.cos.model.ObjectMetadata;
@@ -17,9 +21,15 @@ import org.springframework.web.util.UriUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -41,6 +51,8 @@ public class CosStorageService {
     private static final String ALBUM_COVER = ".album-cover";
     private static final int MAX_ALBUM_NAME_LENGTH = 64;
     private static final int MAX_COS_KEY_BYTES = 850;
+    private static final Duration COS_PROBE_TIMEOUT = Duration.ofSeconds(5);
+    private static final HttpClient ANONYMOUS_COS = HttpClient.newBuilder().connectTimeout(COS_PROBE_TIMEOUT).build();
 
     private final COSClient cosClient;
     private final String secretId;
@@ -88,12 +100,16 @@ public class CosStorageService {
 
     public record GalleryPhoto(String name, String url) {}
 
-    public record GalleryAlbum(String name, GalleryPhoto cover, List<GalleryPhoto> photos) {}
+    public record GalleryAlbum(String name, GalleryPhoto cover, List<GalleryPhoto> photos, boolean locked) {
+        public GalleryAlbum(String name, GalleryPhoto cover, List<GalleryPhoto> photos) {
+            this(name, cover, photos, false);
+        }
+    }
 
     public List<GalleryAlbum> listGalleryAlbums() {
         requireGalleryStorage();
         Map<String, List<COSObjectSummary>> albums = new TreeMap<>(Comparator.reverseOrder());
-        for (COSObjectSummary object : listGalleryObjects()) {
+        for (COSObjectSummary object : listGalleryObjects(GALLERY_PREFIX)) {
             if (!object.getKey().startsWith(GALLERY_PREFIX)) continue;
             String relativeKey = object.getKey().substring(GALLERY_PREFIX.length());
             int folderSeparator = relativeKey.indexOf('/');
@@ -112,10 +128,82 @@ public class CosStorageService {
                 .toList();
     }
 
-    private List<COSObjectSummary> listGalleryObjects() {
+    public GalleryAlbum getGalleryAlbum(String name) {
+        if (UNCATEGORIZED_ALBUM.equals(name)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "请先把照片放进独立相册，再设置查看密码");
+        }
+        requireGalleryStorage();
+        String folder = albumPrefix(name);
+        var objects = listGalleryObjects(folder);
+        if (objects.isEmpty()) throw new BusinessException(ResultCode.NOT_FOUND, "没有找到这个相册");
+        return galleryAlbum(name, objects);
+    }
+
+    public GalleryAlbum signGalleryAlbum(GalleryAlbum album, Date expiresAt) {
+        String folder = albumPrefix(album.name());
+        var photos = album.photos().stream()
+                .map(photo -> new GalleryPhoto(photo.name(), signGalleryPhoto(folder + photo.name(), expiresAt)))
+                .toList();
+        var cover = photos.stream().filter(photo -> album.cover() != null && photo.name().equals(album.cover().name()))
+                .findFirst().orElse(null);
+        return new GalleryAlbum(album.name(), cover, photos, album.locked());
+    }
+
+    private String signGalleryPhoto(String key, Date expiresAt) {
+        var request = new GeneratePresignedUrlRequest(bucket, key, HttpMethodName.GET);
+        request.setExpiration(expiresAt);
+        return cosClient.generatePresignedUrl(request).toExternalForm();
+    }
+
+    public void makeGalleryAlbumPrivate(GalleryAlbum album) {
+        String folder = albumPrefix(album.name());
+        for (var photo : album.photos()) {
+            String key = folder + photo.name();
+            makeGalleryObjectPrivate(key);
+            requirePrivateGalleryObject(key, photo.url());
+        }
+    }
+
+    private void makeGalleryObjectPrivate(String key) {
+        try {
+            cosClient.setObjectAcl(bucket, key, CannedAccessControlList.Private);
+        } catch (CosServiceException exception) {
+            if (exception.getStatusCode() == 403) {
+                throw new BusinessException(ResultCode.FORBIDDEN, "后端 COS 密钥无法修改相册权限，请授权 cos:PutObjectACL");
+            }
+            throw exception;
+        }
+    }
+
+    private void requirePrivateGalleryObject(String key, String configuredUrl) {
+        String origin = cosClient.getObjectUrl(bucket, key).toExternalForm();
+        requireAnonymousReadDenied(origin);
+        if (!origin.equals(configuredUrl)) requireAnonymousReadDenied(configuredUrl);
+    }
+
+    private static void requireAnonymousReadDenied(String url) {
+        var request = HttpRequest.newBuilder(URI.create(url)).timeout(COS_PROBE_TIMEOUT)
+                .header("Cache-Control", "no-cache").GET().build();
+        try {
+            var response = ANONYMOUS_COS.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            response.body().close();
+            int status = response.statusCode();
+            if (status != 403) {
+                throw new BusinessException(ResultCode.BAD_REQUEST,
+                        "未能确认 COS 直链已禁止匿名访问，请检查存储桶的公开访问策略（HTTP " + status + "）");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ResultCode.SERVICE_UNAVAILABLE, "COS 权限检查中断，请重试");
+        } catch (IOException exception) {
+            throw new BusinessException(ResultCode.SERVICE_UNAVAILABLE, "无法检查 COS 权限，请稍后重试");
+        }
+    }
+
+    private List<COSObjectSummary> listGalleryObjects(String folder) {
         ListObjectsRequest request = new ListObjectsRequest()
                 .withBucketName(bucket)
-                .withPrefix(GALLERY_PREFIX);
+                .withPrefix(folder);
         var objects = new ArrayList<COSObjectSummary>();
         ObjectListing page;
         do {
@@ -168,7 +256,10 @@ public class CosStorageService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "「未归档」是保留的相册名");
         }
         requireGalleryStorage();
-        putAlbumMetadata(albumPrefix(album), "");
+        String folder = albumPrefix(album);
+        if (!cosClient.doesObjectExist(bucket, folder)) {
+            putAlbumMetadata(folder, "");
+        }
     }
 
     public void setGalleryCover(String album, String name) {
@@ -181,13 +272,13 @@ public class CosStorageService {
         putAlbumMetadata(folder + ALBUM_COVER, name);
     }
 
-    public String uploadGalleryPhoto(MultipartFile file, String album) {
+    String uploadGalleryPhoto(MultipartFile file, String album, Date expiresAt) {
         String folder = albumPrefix(album);
         requireGalleryStorage();
         String ext = uploadExtension(file);
         String key = folder + UUID.randomUUID() + "." + ext;
         put(file, key, EXT_MIME.get(ext));
-        return baseUrl + "/" + UriUtils.encodePath(key, StandardCharsets.UTF_8);
+        return signGalleryPhoto(key, expiresAt);
     }
 
     public void deleteGalleryPhoto(String album, String name) {
@@ -206,10 +297,14 @@ public class CosStorageService {
     }
 
     private static String albumPrefix(String name) {
+        requireAlbumName(name);
+        return UNCATEGORIZED_ALBUM.equals(name) ? GALLERY_PREFIX : GALLERY_PREFIX + name + "/";
+    }
+
+    static void requireAlbumName(String name) {
         if (!isAlbumName(name)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "相册名无效，请使用不含斜杠的名称");
         }
-        return UNCATEGORIZED_ALBUM.equals(name) ? GALLERY_PREFIX : GALLERY_PREFIX + name + "/";
     }
 
     private static boolean isAlbumName(String name) {
@@ -253,6 +348,9 @@ public class CosStorageService {
 
         try {
             PutObjectRequest req = new PutObjectRequest(bucket, key, file.getInputStream(), meta);
+            if (key.startsWith(GALLERY_PREFIX)) {
+                req.withCannedAcl(CannedAccessControlList.Private);
+            }
             cosClient.putObject(req);
         } catch (IOException e) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "读取上传文件失败");
